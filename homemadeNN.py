@@ -1,24 +1,16 @@
-"""Homemade artificial neural network.
-
-To do:
-- research gradient descent improvements
-- generalize cost function
-- generalize activation function
-- change w_mats to self.w_mats in all functions
-- adapted learning rate
-- relaxation of weights
-"""
+"""Homemade artificial neural network for classification."""
 import numpy as np
 import time
 
 class HomemadeNN(object):
-    """Homemade artificial neural network."""
+    """Homemade artificial neural network for classification."""
 
-    def __init__(self, size_list, seed=-1):
+    def __init__(self, size_list, act_funs='sigmoid', seed=-1):
         """Initialize neural network and random weights.
 
         Args:
             size_list: Number of neurons per layer.
+            act_funs: Activation function name per layer.
             seed: Seed for numpy.random generator.
         """
 
@@ -26,6 +18,12 @@ class HomemadeNN(object):
         self.s = size_list
         self.K = size_list[-1]
         self.L = len(self.s)
+
+        # set activation function for each layer
+        if isinstance(act_funs, list):
+            self.afs = act_funs
+        else:
+            self.afs = [act_funs for _ in range(self.L)]
 
         # set random seed
         self.seed = seed
@@ -43,10 +41,48 @@ class HomemadeNN(object):
             
             self.w_mats.append(weight_mat)
 
-    def act_fun(self, z_mat):
-        """Calculate element-wise sigmoid activation function."""
+
+    def act_fun(self, z_mat, fun_name):
+        """Calculate element-wise activation function.
         
-        return (1 / (1 + np.exp(-1 * np.array(z_mat))))
+        Implemented: sigmoid, tanh, ReLU.
+
+        Args:
+            z_mat: Input matrix to activation function.
+            fun_name: String of activation function name.
+
+        Returns:
+            Output matrix with element-wise applied activation function.
+        """
+        
+        # sigmoid function 
+        if fun_name == 'sigmoid':
+            return (1 / (1 + np.exp(-1 * np.array(z_mat))))
+        
+        # hyperbolic tangent
+        elif fun_name == 'tanh':
+            return np.tanh(z_mat)
+        
+        # rectified linear unit
+        elif fun_name == 'ReLU':
+            return np.maximum(0, z_mat)
+
+    
+    def der_act_fun(self, z_mat, fun_name):
+        """Calculate element-wise derivate of activation function."""
+
+        # sigmoid function 
+        if fun_name == 'sigmoid':
+            a = self.act_fun(z_mat, fun_name)
+            return a * (1 - a)
+        
+        # hyperbolic tangent
+        elif fun_name == 'tanh':
+            return 1 - (np.tanh(z_mat))**2
+        
+        # rectified linear unit
+        elif fun_name == 'ReLU':
+            return np.where(z_mat >= 0, 1.0, 0.0)
 
 
     def forward_prop(self, x_mat, layer=-1):
@@ -58,6 +94,7 @@ class HomemadeNN(object):
 
         Returns:
             a_list: Activation values for each layer including bias.
+            z_list: Input values for each layer excluding bias.
         """
         
         # do full propagation if no layer index indicated
@@ -72,27 +109,31 @@ class HomemadeNN(object):
         a_list = []
         a = np.insert(x_mat, 0, 1, axis=1)
         a_list.append(a)
+        z_list = [x_mat]
 
         # loop over remaining layers
-        for i in range(layer):
+        for l in range(layer):
 
             # select weight matrix
-            w_mat = self.w_mats[i]
+            w_mat = self.w_mats[l]
 
             # matrix multiplication
             z = a.dot(w_mat.T)
 
+            # add to list
+            z_list.append(z)
+
             # activation function
-            a = self.act_fun(z)
+            a = self.act_fun(z, self.afs[l+1])
         
             # add bias except for output layer
-            if i < len(self.w_mats)-1:
+            if l < len(self.w_mats)-1:
                 a = np.insert(a, 0, 1, axis=1)
 
             # add to list
             a_list.append(a)
 
-        return a_list
+        return a_list, z_list
 
 
     def backward_prop(self, x_data, y_data, lam):
@@ -116,10 +157,10 @@ class HomemadeNN(object):
         D_mats = delta_mats[:]
 
         # do forward propagation to get all activations
-        a = self.forward_prop(x_data)
+        a, z = self.forward_prop(x_data)
 
-        # calculate last d (simple because derivative of cost and activation function match)
-        d.append(a[-1] - y_data) #TODO: change here to generalize for different cost and activation functions
+        # calculate last d
+        d.append(self.der_cost_fun(y_data, a[-1]) * self.der_act_fun(z[-1], self.afs[-1]))
 
         for l in reversed(range(len(self.w_mats))):
 
@@ -128,10 +169,9 @@ class HomemadeNN(object):
 
             # calculate d vector of layer
             wd = d[l+1].dot(w_mat)
-            d[l] = wd * a[l] * (1 - a[l]) #TODO: change here to generalize for different cost and activation functions
+            wd = wd[:,1:] # exclude bias nodes
 
-            # lose d values for bias nodes
-            d[l] = d[l][:,1:]
+            d[l] = wd * self.der_act_fun(z[l], self.afs[l])
 
             # calculate delta matrix
             delta_mats[l] = d[l+1].T.dot(a[l])
@@ -144,7 +184,9 @@ class HomemadeNN(object):
 
 
     def cost_fun(self, x_data, y_data, lam):
-        """ Calculate logarithmic cost function.
+        """ Calculate cost function.
+
+        Implemented: Logarithmic cost function.
 
         Args:
             x_data: Input data of shape (data points)x(input layer).
@@ -156,7 +198,7 @@ class HomemadeNN(object):
         """
     
         # calculate cost
-        h = self.forward_prop(x_data)[-1]
+        h = self.forward_prop(x_data)[0][-1]
         cost = -1 / x_data.shape[0] * (np.trace(y_data.dot(np.log(h).T)) + np.trace((1 - y_data).dot(np.log(1 - h).T)))
 
         # add regularization
@@ -175,6 +217,12 @@ class HomemadeNN(object):
         cost += reg_cost
         
         return cost
+
+
+    def der_cost_fun(self, y_data, a_mat):
+        """ Calculate derivative of cost function w.r.t. hypothesis."""
+    
+        return (a_mat - y_data) / (a_mat - a_mat**2)
 
 
     def grad_descent(self, D_mats, alpha):
@@ -211,13 +259,19 @@ class HomemadeNN(object):
     def test(self, x_data, y_data):
         """Test neural network performance."""
 
-        return np.sum(np.argmax(self.forward_prop(x_data)[-1], axis=1) == np.argmax(y_data, axis=1))/y_data.shape[0]
+        if self.K == 1:
+            return np.sum((self.forward_prop(x_data)[0][-1] > 0.5) == y_data)/y_data.shape[0]
+        else:       
+            return np.sum(np.argmax(self.forward_prop(x_data)[0][-1], axis=1) == np.argmax(y_data, axis=1))/y_data.shape[0]
 
 
     def predict(self, x_data):
         """Predict output based on NN weights."""
 
-        return np.argmax(self.forward_prop(x_data)[-1], axis=1)
+        if self.K == 1:
+            return self.forward_prop(x_data)[0][-1] > 0.5
+        else:
+            return np.argmax(self.forward_prop(x_data)[0][-1], axis=1)
 
     
     def train(self, x_data, y_data, alpha, lam, max_iter, eps=1e-6, batch_size=0, shuffle_opt=0, quiet=0):
@@ -250,10 +304,14 @@ class HomemadeNN(object):
         # monitor cost function convergence
         self.conv_data = [self.cost_fun(x_data, y_data, lam)]
 
+        # print iteration
+        print_iter = int(0.01 * max_iter)
+
         for i in range(max_iter):
 
             if not quiet:
-                start_time = time.time()    
+                if i % print_iter == 0 or i == max_iter-1:
+                    start_time = time.time()    
 
             # shuffle data
             if shuffle_opt:
@@ -279,10 +337,12 @@ class HomemadeNN(object):
 
             # print information
             if not quiet:            
-                stop_time = time.time()
-                print("Iteration: %d - Cost: %f - Time: %f - Alpha: %f" % (i, self.conv_data[-1], stop_time - start_time, alpha))
+
+                if i % print_iter == 0 or i == max_iter-1:
+                    stop_time = time.time()
+                    print("Iteration: %d - Cost: %f - Time: %f - Alpha: %f" % (i, self.conv_data[-1], stop_time - start_time, alpha))
             
-                if (i % 10) == 0 or i == max_iter-1:
+                if i % (10*print_iter) == 0 or i == max_iter-1:
                     print("Accuracy: %.2f %%" % (self.test(x_data, y_data)*100))
             
 

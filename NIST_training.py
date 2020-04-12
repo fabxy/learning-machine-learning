@@ -26,22 +26,23 @@ for i in range(y_vecs.shape[0]):
 y_data = y_vecs
 
 # neural network hyperparameters
-s_hidden = [200]
+s_hidden = [25]
+activation_functions = ['ReLU','ReLU','sigmoid']
 
-max_iter = 50
-alpha = 0.1
-lam = 1
-batch_size = 10
+max_iter = 100
+alpha = 0.02
+lam = 0.008
+batch_size = 5
 shuffle_opt = 1
-rseed = 5
+rseed = 0
 test_data_size = 0.2
 
 # create neural network
-ann = homemadeNN.HomemadeNN([x_data.shape[1]] + s_hidden + [y_data.shape[1]], rseed)
+ann = homemadeNN.HomemadeNN([x_data.shape[1]] + s_hidden + [y_data.shape[1]], act_funs=activation_functions, seed=rseed)
 
-# shuffle and split data before training
-x_data, y_data = ann.shuffle_data(x_data, y_data)
-x_train, x_test, y_train, y_test = train_test_split(x_data, y_data, test_size=test_data_size, random_state=rseed)
+# do not shuffle but split data before training
+# x_data, y_data = ann.shuffle_data(x_data, y_data)
+x_train, x_test, y_train, y_test = train_test_split(x_data, y_data, test_size=test_data_size, random_state=4)
 
 # check fair distribution of classes
 class_count = np.zeros(y_data.shape[1])
